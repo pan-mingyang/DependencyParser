@@ -1,4 +1,5 @@
 import random
+from typing import Dict
 
 from model import *
 from torch import optim
@@ -108,6 +109,13 @@ class Vocab(object):
             vocab.w2i[w] = i
         return vocab
 
+    @staticmethod
+    def get_vocab_from_dict(dic: Dict):
+        vocab = Vocab()
+        vocab.w2i = dict(dic)
+        vocab.i2w = {v: k for k, v in dic.items()}
+        return vocab
+
     def get_word(self, i):
         return self.i2w[i]
 
@@ -115,42 +123,66 @@ class Vocab(object):
         return self.w2i[w]
 
 
-if __name__ == '__main__':
+def get_embedding_and_tags():
+    with open('data/sskip.100.vectors') as f:
+        words = dict()
+        vector = []
+        i = 0
+        line = f.readline().split()
+        word_num = int(line[0])
+        for line in f.readlines():
+            line = line.split()
+            words[line[0]] = i
+            i += 1
+            vector.append(list(map(lambda x: float(x), line[1:])))
+
+    words2 = set()
+    tags = set()
+    with open('data/sentences_with_actions_train.txt') as f:
+        for line in f.readlines():
+            sentence, tag, _ = line.split('\t')
+            sentence = sentence.split()
+            tag = tag.split()
+            words2 = words2.union(sentence)
+            tags = tags.union(tag)
+    oov = words2 - words.keys()
+    for w in oov:
+        words[w] = i
+        i += 1
+        vector.append(list(torch.rand(100) * 2 - 1))
+        print(i)
+
+    tag_vocab = Vocab.get_vocab(tags)
+    return words, vector, tag_vocab
+
+
+def get_data(filename, word_vocab, tag_vocab):
+    data = []
+    with open(filename) as f:
+        for line in f.readlines():
+            sentence, tag, action = line.split('\t')
+            sentence = sentence.split()
+            tag = tag.split()
+            action = action.split()[:-1]
+            sentence = list(map(lambda w: word_vocab.w2i[w], sentence))
+            tag = list(map(lambda t: tag_vocab.w2i[t], tag))
+            action = list(map(lambda a: ACTS[a], action))
+            data.append((sentence, tag, action))
+        return data
+
+
+def main():
+    words, vectors, tag_vocab = get_embedding_and_tags()
+    vocab = Vocab.get_vocab_from_dict(words)
+    train = get_data('data/sentences_with_actions_train.txt', vocab, tag_vocab)
+    model = Parser(100, 16, len(words), len(tag_vocab.w2i), 128, 3, vocab, vectors).to(device)
     '''
     get_actions('PTB/PTB_train_auto.conll', 'data/sentences_with_actions_train.txt')
     get_actions('PTB/PTB_test_auto.conll', 'data/sentences_with_actions_test.txt')
     get_actions('PTB/PTB_development_auto.conll', 'data/sentences_with_actions_dev.txt')
     '''
-
-    with open('data/sentences_with_actions_train.txt') as f:
-        words = set()
-        tags = set()
-        for line in f.readlines():
-            sentence, tag, _ = line.split('\t')
-            sentence = sentence.split()
-            tag = tag.split()
-            for w in sentence:
-                words.add(w)
-            for t in tag:
-                tags.add(t)
-    vocab = Vocab.get_vocab(list(words))
-    tags = Vocab.get_vocab(list(tags))
-
-    model = Parser(64, 16, len(words), len(tags.w2i), 128, 3, vocab).to(device)
-    train = []
-    with open('data/sentences_with_actions_train.txt') as f:
-        for line in f.readlines():
-            sentence, tag, action = line.split('\t')
-            sentence = sentence.split()
-            action = action.split()
-            tag = tag.split()
-            sentence = list(map(lambda x: vocab.get_index(x), sentence))
-            action = list(map(lambda x: ACTS[x], action))
-            tag = list(map(lambda x: tags.get_index(x), tag))
-            train.append((sentence, action, tag))
-
-    epoch = 10
-
+    epoch = 50
+    
     optimizer = optim.SGD(model.parameters(), lr=.015, momentum=.9)
     los = 0
     c = 0
@@ -174,4 +206,5 @@ if __name__ == '__main__':
         torch.save(model, 'a{}.pkl'.format(i))
 
 
-
+if __name__ == '__main__':
+    main()

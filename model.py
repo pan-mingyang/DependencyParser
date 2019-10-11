@@ -8,7 +8,7 @@ ACTS = {'SHIFT': 0, 'LEFT_ARC': 1, 'RIGHT_ARC': 2}
 
 
 class Parser(nn.Module):
-    def __init__(self, word_dim, tag_dim, word_num, tag_num, hidden, action_num, vocab):
+    def __init__(self, word_dim, tag_dim, word_num, tag_num, hidden, action_num, vocab, vectors):
         super(Parser, self).__init__()
         self.word_embedding = nn.Embedding(word_num, word_dim).to(device)
         self.tag_embedding = nn.Embedding(tag_num, tag_dim).to(device)
@@ -18,6 +18,8 @@ class Parser(nn.Module):
         self.action_num = action_num
         self.word_dim = word_dim
         self.tag_dim = tag_dim
+        if vectors is not None:
+            self.word_embedding.weight = nn.Parameter(torch.tensor(vectors))
 
     def get_action(self, x):
         x = self.input(x)
@@ -38,7 +40,7 @@ class Parser(nn.Module):
                 break
             if len(stack) < 3 and len(buffer) > 1:
                 stack.append(buffer[0])
-                acts.append(ACTS['SHIFT'])
+                acts.append(torch.tensor(ACTS['SHIFT']).to(device))
                 del buffer[0]
                 continue
             x = torch.cat([stack[-1], stack[-2], buffer[0]], 0)
@@ -51,11 +53,10 @@ class Parser(nn.Module):
                 del stack[-2]
             elif act == ACTS['RIGHT_ARC']:
                 del stack[-1]
-        return acts
+        return torch.tensor(acts)
 
-    def forward(self, sentence, actions, tag):
+    def forward(self, sentence, tag, actions):
         loss = []
-        actions = actions[:-1]
         stack = [torch.zeros(self.word_dim + self.tag_dim)]
         buffer = self.word_embedding(torch.tensor(sentence).to(device))
         tags = self.tag_embedding(torch.tensor(tag).cuda())
